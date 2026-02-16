@@ -1,5 +1,6 @@
 from fastapi import FastAPI, status
 from .schemas import UserActivityEvent
+from .rabbitmq import publish_event
 
 app = FastAPI(title="Producer Service")
 
@@ -11,8 +12,6 @@ def health_check():
 
 @app.post("/api/v1/events/track", status_code=status.HTTP_202_ACCEPTED)
 def track_event(event: UserActivityEvent):
-    # FastAPI automatically serializes datetime
-    return {
-        "message": "Event accepted",
-        "event": event
-    }
+    publish_event(event.dict())
+
+    return {"message": "Event queued successfully"}
