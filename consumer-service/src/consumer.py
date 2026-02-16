@@ -5,6 +5,8 @@ import threading
 from fastapi import FastAPI
 
 from .config import RABBITMQ_HOST, RABBITMQ_PORT, QUEUE_NAME
+from .database import insert_event
+
 
 app = FastAPI(title="Consumer Service")
 
@@ -17,16 +19,19 @@ def health_check():
 def process_message(ch, method, properties, body):
     try:
         event = json.loads(body)
-        print("Received event:", event)
 
-        # Acknowledge message
+        insert_event(event)
+
+        print("Stored event:", event)
+
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except Exception as e:
         print("Processing failed:", e)
 
-        # Acknowledge anyway to avoid infinite retry
+        # acknowledge to prevent infinite retries
         ch.basic_ack(delivery_tag=method.delivery_tag)
+
 
 
 def start_consumer():
