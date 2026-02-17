@@ -1,14 +1,22 @@
 import json
 import pika
 import threading
+import signal
+import time
+import logging
 
 from fastapi import FastAPI
 
 from .config import RABBITMQ_HOST, RABBITMQ_PORT, QUEUE_NAME
 from .database import insert_event
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Consumer Service")
+
+connection = None
+channel = None
 
 
 @app.get("/health")
@@ -17,43 +25,85 @@ def health_check():
 
 
 def process_message(ch, method, properties, body):
-    try:
-        event = json.loads(body)
+    event = json.loads(body)
 
-        insert_event(event)
+    max_retries = 5
+    retry_delay = 2
 
-        print("Stored event:", event)
+    for attempt in range(max_retries):
+        try:
+            insert_event(event)
 
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+            logger.info(f"Stored event: {event}")
 
-    except Exception as e:
-        print("Processing failed:", e)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
 
-        # acknowledge to prevent infinite retries
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as e:
+            logger.error(
+                f"DB insert failed (attempt {attempt + 1}): {e}"
+            )
+            time.sleep(retry_delay)
 
+    logger.error(f"Failed after retries. Dropping message: {event}")
+    ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 def start_consumer():
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT)
-    )
+    global connection, channel
 
-    channel = connection.channel()
-    channel.queue_declare(queue=QUEUE_NAME, durable=True)
+    while True:
+        try:
+            logger.info("Connecting to RabbitMQ...")
 
-    channel.basic_qos(prefetch_count=1)
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    port=RABBITMQ_PORT,
+                )
+            )
 
-    channel.basic_consume(
-        queue=QUEUE_NAME,
-        on_message_callback=process_message,
-    )
+            channel = connection.channel()
 
-    print("Consumer started. Waiting for messages...")
-    channel.start_consuming()
+            channel.queue_declare(queue=QUEUE_NAME, durable=True)
+            channel.basic_qos(prefetch_count=1)
+
+            channel.basic_consume(
+                queue=QUEUE_NAME,
+                on_message_callback=process_message,
+            )
+
+            logger.info("Consumer started. Waiting for messages...")
+            channel.start_consuming()
+
+        except pika.exceptions.AMQPConnectionError:
+            logger.warning(
+                "RabbitMQ not ready. Retrying in 5 seconds..."
+            )
+            time.sleep(5)
 
 
 @app.on_event("startup")
 def startup_event():
     thread = threading.Thread(target=start_consumer, daemon=True)
     thread.start()
+
+
+def shutdown_handler(*args):
+    global connection, channel
+
+    logger.info("Shutting down consumer...")
+
+    try:
+        if channel and channel.is_open:
+            channel.stop_consuming()
+
+        if connection and connection.is_open:
+            connection.close()
+
+    except Exception as e:
+        logger.error(f"Shutdown error: {e}")
+
+
+signal.signal(signal.SIGTERM, shutdown_handler)
+signal.signal(signal.SIGINT, shutdown_handler)

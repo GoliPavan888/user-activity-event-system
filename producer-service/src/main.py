@@ -1,6 +1,12 @@
-from fastapi import FastAPI, status
-from .schemas import UserActivityEvent
-from .rabbitmq import publish_event
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import logging
+
+from src.producer import publish_event
+from src.models import Event
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Producer Service")
 
@@ -10,8 +16,25 @@ def health_check():
     return {"status": "healthy"}
 
 
-@app.post("/api/v1/events/track", status_code=status.HTTP_202_ACCEPTED)
-def track_event(event: UserActivityEvent):
-    publish_event(event.dict())
+@app.post("/api/v1/events/track")
+def track_event(event: Event):
+    try:
+        publish_event(event.dict())
 
-    return {"message": "Event queued successfully"}
+        logger.info(f"Event queued: {event.dict()}")
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "accepted",
+                "message": "Event queued successfully"
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to queue event: {e}")
+
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to queue event"},
+        )

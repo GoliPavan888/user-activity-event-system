@@ -1,32 +1,31 @@
 import mysql.connector
+from datetime import datetime
 import json
 
-from .db_config import (
-    MYSQL_HOST,
-    MYSQL_PORT,
-    MYSQL_USER,
-    MYSQL_PASSWORD,
-    MYSQL_DB,
-)
+from .config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 
 
-def get_connection():
-    return mysql.connector.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DB,
-    )
+def format_timestamp(ts: str):
+    # Convert ISO format to MySQL format
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def insert_event(event):
-    conn = get_connection()
+    conn = mysql.connector.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+    )
+
     cursor = conn.cursor()
 
+    formatted_ts = format_timestamp(event["timestamp"])
+
     query = """
-        INSERT INTO user_activities
-        (user_id, event_type, timestamp, metadata)
+        INSERT INTO events (user_id, event_type, timestamp, metadata)
         VALUES (%s, %s, %s, %s)
     """
 
@@ -35,12 +34,11 @@ def insert_event(event):
         (
             event["user_id"],
             event["event_type"],
-            event["timestamp"],
-            json.dumps(event.get("metadata")),
+            formatted_ts,
+            json.dumps(event.get("metadata", {})),
         ),
     )
 
     conn.commit()
-
     cursor.close()
     conn.close()
