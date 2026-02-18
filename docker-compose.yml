@@ -33,6 +33,8 @@ services:
     build: ./producer-service
     ports:
       - "8000:8000"
+    volumes:
+    - ./tests:/app/tests
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -47,6 +49,8 @@ services:
 
   consumer-service:
     build: ./consumer-service
+    volumes:
+    - ./tests:/app/tests
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672

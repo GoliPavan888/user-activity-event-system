@@ -19,9 +19,9 @@ def health_check():
 @app.post("/api/v1/events/track")
 def track_event(event: Event):
     try:
-        publish_event(event.dict())
+        publish_event(event.model_dump())
+        logger.info(f"Event queued: {event.model_dump()}")
 
-        logger.info(f"Event queued: {event.dict()}")
 
         return JSONResponse(
             status_code=202,
