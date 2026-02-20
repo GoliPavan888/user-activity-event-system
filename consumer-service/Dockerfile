@@ -7,6 +7,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
+COPY tests/consumer /app/tests/consumer
+COPY pytest.ini /app/pytest.ini
 
 EXPOSE 8001
 

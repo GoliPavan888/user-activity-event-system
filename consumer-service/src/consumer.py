@@ -6,14 +6,26 @@ import time
 import logging
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
-from .config import RABBITMQ_HOST, RABBITMQ_PORT, QUEUE_NAME
+from .config import RABBITMQ_HOST, RABBITMQ_PORT, QUEUE_NAME, DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 from .database import insert_event
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Consumer Service")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    # start consumer thread
+    thread = threading.Thread(target=start_consumer, daemon=True)
+    thread.start()
+    yield
+    # on shutdown, call handler
+    shutdown_handler()
+
+app = FastAPI(title="Consumer Service", lifespan=lifespan)
 
 connection = None
 channel = None
@@ -21,11 +33,41 @@ channel = None
 
 @app.get("/health")
 def health_check():
+    # verify RabbitMQ and MySQL connectivity
+    errors = []
+    try:
+        import pika
+        conn = pika.BlockingConnection(
+            pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT, socket_timeout=2)
+        )
+        conn.close()
+    except Exception as e:
+        errors.append(f"rabbitmq:{e}")
+    try:
+        import mysql.connector
+        db = mysql.connector.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            connection_timeout=2,
+        )
+        db.close()
+    except Exception as e:
+        errors.append(f"mysql:{e}")
+    if errors:
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "errors": errors})
     return {"status": "healthy"}
 
 
 def process_message(ch, method, properties, body):
-    event = json.loads(body)
+    try:
+        event = json.loads(body)
+    except json.JSONDecodeError as je:
+        logger.error(f"Malformed message, dropping: {je}")
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+        return
 
     max_retries = 5
     retry_delay = 2
@@ -45,7 +87,19 @@ def process_message(ch, method, properties, body):
             )
             time.sleep(retry_delay)
 
-    logger.error(f"Failed after retries. Dropping message: {event}")
+    logger.error(f"Failed after retries. Sending to DLQ: {event}")
+    # publish to dead-letter queue instead of silently dropping
+    try:
+        dlq = QUEUE_NAME + "_dlq"
+        ch.basic_publish(
+            exchange="",
+            routing_key=dlq,
+            body=json.dumps(event),
+            properties=pika.BasicProperties(delivery_mode=2),
+        )
+        logger.info(f"Message sent to DLQ {dlq}")
+    except Exception as de:
+        logger.error(f"Failed to publish to DLQ: {de}")
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
@@ -66,6 +120,8 @@ def start_consumer():
             channel = connection.channel()
 
             channel.queue_declare(queue=QUEUE_NAME, durable=True)
+            # dead-letter queue for messages that fail after retries
+            channel.queue_declare(queue=QUEUE_NAME + "_dlq", durable=True)
             channel.basic_qos(prefetch_count=1)
 
             channel.basic_consume(
@@ -83,10 +139,6 @@ def start_consumer():
             time.sleep(5)
 
 
-@app.on_event("startup")
-def startup_event():
-    thread = threading.Thread(target=start_consumer, daemon=True)
-    thread.start()
 
 
 def shutdown_handler(*args):
@@ -107,3 +159,4 @@ def shutdown_handler(*args):
 
 signal.signal(signal.SIGTERM, shutdown_handler)
 signal.signal(signal.SIGINT, shutdown_handler)
+

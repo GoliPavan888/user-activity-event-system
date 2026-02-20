@@ -1,9 +1,3 @@
-from pydantic import BaseModel
-from typing import Dict, Any
-
-
-class Event(BaseModel):
-    user_id: str
-    event_type: str
-    timestamp: str
-    metadata: Dict[str, Any]
+# legacy module kept for backward compatibility
+# the canonical schema is in schemas.py
+from .schemas import UserActivityEvent as Event

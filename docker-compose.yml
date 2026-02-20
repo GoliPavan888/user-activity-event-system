@@ -33,11 +33,10 @@ services:
     build: ./producer-service
     ports:
       - "8000:8000"
-    volumes:
-    - ./tests:/app/tests
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
+      QUEUE_NAME: user_activity_events
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -49,11 +48,10 @@ services:
 
   consumer-service:
     build: ./consumer-service
-    volumes:
-    - ./tests:/app/tests
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
+      QUEUE_NAME: user_activity_events
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: root

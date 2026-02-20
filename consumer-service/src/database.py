@@ -25,10 +25,9 @@ def insert_event(event):
     formatted_ts = format_timestamp(event["timestamp"])
 
     query = """
-        INSERT INTO events (user_id, event_type, timestamp, metadata)
+        INSERT INTO user_activities (user_id, event_type, timestamp, metadata)
         VALUES (%s, %s, %s, %s)
     """
-
     cursor.execute(
         query,
         (

@@ -3,7 +3,7 @@ import os
 # RabbitMQ configuration
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
-QUEUE_NAME = os.getenv("QUEUE_NAME", "user_activity")
+QUEUE_NAME = os.getenv("QUEUE_NAME", "user_activity_events")
 
 # Database configuration
 DB_HOST = os.getenv("DB_HOST", "mysql")
