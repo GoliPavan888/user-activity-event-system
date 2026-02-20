@@ -43,6 +43,7 @@ Client → Producer API → RabbitMQ Queue → Consumer Service → MySQL Databa
 
 ```
 user-activity-event-system/
+├── common/               # shared modules (currently empty)
 ├── producer-service/
 │   ├── src/
 │   ├── Dockerfile
@@ -54,8 +55,10 @@ user-activity-event-system/
 ├── tests/
 │   ├── producer/
 │   └── consumer/
+├── db/
+│   └── init.sql
 ├── docker-compose.yml
-├── .env.example
+├── .env.example          # environment variable template
 └── README.md
 ```
 
@@ -84,37 +87,62 @@ cd user-activity-event-system
 
 ### 2. Create Environment File
 
-Copy example env file:
+Copy the example configuration and adjust any values:
 
 ```
-bash
 cp .env.example .env
 ```
 
-Update values if needed.
+The services and compose file read settings from `.env`. Below are the keys you can customise:
+
+```dotenv
+# RabbitMQ
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_PORT=5672
+QUEUE_NAME=user_activity_events
+
+# MySQL
+DB_HOST=mysql
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=root_password
+DB_NAME=user_activity_db
+
+# Producer service
+PRODUCER_PORT=8000
+
+# Consumer service
+CONSUMER_PORT=8001
+```
+
+Any changes here will automatically be picked up the next time you recreate the containers.
 
 ### 3. Start Services
 
+Once the `.env` file is populated, start everything with Docker Compose:
+
 ```
-bash
 docker-compose up --build
 ```
 
-Or run in background:
+To run in the background:
 
 ```
-bash
 docker-compose up -d --build
 ```
+
+The compose file will create containers for RabbitMQ, MySQL, the producer and the consumer. Ports are taken from the environment file (`8000` for producer, `8001` for consumer by default).
 
 ---
 
 ## Service Endpoints
 
+By default the producer listens on `PRODUCER_PORT` (8000) and the consumer on `CONSUMER_PORT` (8001).
+
 | Service | URL |
 |---------|-----|
-| Producer API Docs | http://localhost:8000/docs |
-| Consumer Health Check | http://localhost:8001/health |
+| Producer API Docs | http://localhost:${PRODUCER_PORT:-8000}/docs |
+| Consumer Health Check | http://localhost:${CONSUMER_PORT:-8001}/health |
 | RabbitMQ Dashboard | http://localhost:15672 |
 
 **RabbitMQ Dashboard Default Login:**
@@ -177,13 +205,13 @@ SELECT * FROM user_activities;
 
 ```
 bash
-docker-compose exec producer-service pytest tests/producer
+docker-compose exec producer-service pytest -q
 ```
 ### Consumer tests
 
 ```
 bash
-docker-compose exec consumer-service pytest tests/consumer
+docker-compose exec consumer-service pytest -q
 ```
 
 ---
